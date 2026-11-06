@@ -2,21 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  AI_CHAT_SKILL_MARKER,
   aiChatEventStatus,
   buildThreadCreateInput,
   buildTurnInput,
   chatPrimaryAction,
   createAiSnapshotRefreshQueue,
   filterVisibleAiEvents,
-  insertSkillMention,
-  isAiChatCapabilityAvailable,
   needsDangerConfirmation,
   normalizeChatSelection,
+  parseAiChatComposerFragment,
   patchAiChatSnapshot,
-  readSkillMention,
-  routeChatState,
-  settingsForNewAiThread,
-  shouldRefreshAiSnapshot,
 } from "../web/src/aiChatState.ts";
 
 const models = [
@@ -38,12 +34,6 @@ const models = [
   },
 ];
 
-test("AI chat is exposed only when the local capability is explicit", () => {
-  assert.equal(isAiChatCapabilityAvailable({ localAiChat: true }), true);
-  assert.equal(isAiChatCapabilityAvailable({ localAiChat: false }), false);
-  assert.equal(isAiChatCapabilityAvailable(undefined), false);
-});
-
 test("new threads freeze the current project and optional issue as server identifiers", () => {
   assert.deepEqual(buildThreadCreateInput("project-1", "issue-1"), {
     projectId: "project-1",
@@ -53,32 +43,6 @@ test("new threads freeze the current project and optional issue as server identi
     projectId: "project-1",
   });
   assert.equal(buildThreadCreateInput("", null), null);
-});
-
-test("route changes update only the next origin and preserve the selected global thread", () => {
-  assert.deepEqual(
-    routeChatState(
-      { selectedThreadId: "thread-a", pendingProjectId: "project-a", pendingIssueId: "issue-a" },
-      "project-b",
-      "issue-b",
-    ),
-    {
-      selectedThreadId: "thread-a",
-      pendingProjectId: "project-b",
-      pendingIssueId: "issue-b",
-    },
-  );
-});
-
-test("new-thread settings are reused only when they belong to the current project catalog", () => {
-  const settings = {
-    model: "codex-real-model",
-    reasoningEffort: "high",
-    sandbox: "workspace-write",
-  };
-  assert.deepEqual(settingsForNewAiThread("project-a", "project-a", settings), settings);
-  assert.deepEqual(settingsForNewAiThread("project-b", "project-a", settings), {});
-  assert.deepEqual(settingsForNewAiThread("project-b", null, settings), {});
 });
 
 test("PATCH results can update only the snapshot for the thread that started the request", () => {
@@ -122,27 +86,20 @@ test("model and effort selections are restricted to the real catalog", () => {
   assert.equal(normalizeChatSelection([], "missing-model", "high"), null);
 });
 
-test("@ skill mentions keep a visible label while sending only the selected real id", () => {
-  assert.deepEqual(readSkillMention("请用 @cl", 6), {
-    start: 3,
-    end: 6,
-    query: "cl",
-  });
-  assert.deepEqual(insertSkillMention("请用 @cl 检查", 3, 6, {
-    id: "cloudflare",
-    label: "Cloudflare",
-    scope: "user",
-  }), {
-    value: "请用 @Cloudflare 检查",
-    caret: 14,
-    skillId: "cloudflare",
+test("skill composer fragments keep opaque markers aligned with selected real ids", () => {
+  assert.deepEqual(parseAiChatComposerFragment(JSON.stringify({
+    message: `请用 ${AI_CHAT_SKILL_MARKER} 检查`,
+    skillIds: ["cloudflare"],
+  }), ["cloudflare"]), {
+    message: `请用 ${AI_CHAT_SKILL_MARKER} 检查`,
+    skillIds: ["cloudflare"],
   });
 });
 
 test("turn input cannot contain cwd, hidden context, model overrides or arbitrary args", () => {
-  const input = buildTurnInput("检查 LOCAL-103", ["cloudflare"], false);
+  const input = buildTurnInput(`检查 ${AI_CHAT_SKILL_MARKER} LOCAL-103`, ["cloudflare"], false);
   assert.deepEqual(input, {
-    message: "检查 LOCAL-103",
+    message: `检查 ${AI_CHAT_SKILL_MARKER} LOCAL-103`,
     skillIds: ["cloudflare"],
   });
   assert.equal(JSON.stringify(input).includes("workspacePath"), false);
@@ -152,20 +109,6 @@ test("turn input cannot contain cwd, hidden context, model overrides or arbitrar
     message: "执行",
     dangerFullAccessConfirmed: true,
   });
-});
-
-test("runtime controls distinguish send, stop, danger confirmation and SSE refresh hints", () => {
-  assert.equal(chatPrimaryAction("running", "hello"), "stop");
-  assert.equal(chatPrimaryAction("idle", "hello"), "send");
-  assert.equal(chatPrimaryAction("idle", "  "), "disabled");
-  assert.equal(chatPrimaryAction("idle", "hello", true), "disabled");
-  assert.equal(chatPrimaryAction("running", "hello", true), "disabled");
-  assert.equal(needsDangerConfirmation("danger-full-access", false), true);
-  assert.equal(needsDangerConfirmation("danger-full-access", true), false);
-  assert.equal(needsDangerConfirmation("workspace-write", false), false);
-  assert.equal(shouldRefreshAiSnapshot("ai.event"), true);
-  assert.equal(shouldRefreshAiSnapshot("ai.run"), true);
-  assert.equal(shouldRefreshAiSnapshot("unrelated"), false);
 });
 
 test("visible activity keeps only the latest lifecycle item without merging messages", () => {
@@ -242,6 +185,13 @@ test("activity status treats started, running and in_progress as active and fail
     role: "activity",
     content: "",
     data: { status: "completed" },
+  }), "completed");
+  assert.equal(aiChatEventStatus({
+    id: "5",
+    type: "error",
+    role: "activity",
+    content: "Skill descriptions were shortened",
+    data: { status: "warning" },
   }), "completed");
 });
 

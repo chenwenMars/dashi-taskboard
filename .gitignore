@@ -6,5 +6,12 @@ dist/
 .tmp/
 cloud-migration-exports/
 .playwright-cli/
+.e2e/
 *.log
 .DS_Store
+/*-proof.png
+/workflow-telemetry.json
+src-tauri/binaries/
+src-tauri/gen/
+src-tauri/resources/
+src-tauri/target/
