@@ -50,6 +50,14 @@ npm run taskctl -- issue create \
 
 请运行 `npm link`，以便在 shell 路径中使用 `taskctl`。设置 `CODEX_TASKBOARD_URL`，可让 CLI 指向另一个本地或局域网服务。云端部署通过**回环 companion**（本机 loopback 配套服务，不是「伴侣」）使用 `taskctl cloud login` 配置。
 
+## 让议题跳过 SSH 自动认领
+
+如果希望议题保留在 `todo`，但不被 SSH 远程 Codex 自动认领器领取，请为该议题添加 `no-auto-claim` 标签。新建项目默认提供该标签；已有项目可在议题的标签选择器中搜索 `no-auto-claim`，若不存在则直接创建。移除该标签后，议题在满足其他认领条件时可重新参与远程自动认领。
+
+该标签仅影响 SSH 远程自动认领器，不会修改议题状态、阻止手动处理议题，也不适用于本地项目的自动认领。
+
+远程自动认领器还会跳过带 `ssh-import` 标签的议题——该标签用于标记从历史 SSH 对话导入的议题，避免重新认领时重复启动旧会话。它不在默认标签里，也没有任何代码会自动添加，确实属于导入记录时用同一个标签选择器手动加上即可。
+
 ## 安装 Codex Skill
 
 将 `skills/manage-taskboard` 复制或符号链接到 Codex Skill 目录，然后启动一个新的 Codex 任务：
